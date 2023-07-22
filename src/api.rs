@@ -1,14 +1,11 @@
-use ethers::prelude::{Provider, Http, Middleware, abigen, Address};
+use ethers::prelude::{Provider, Http, Middleware, abigen, Address, U512};
 use std::sync::Arc;
 use std::str::FromStr;
-use eyre::Result;
-
+use eyre::{eyre, Result};
 
 pub type Client = Arc<Provider<Http>>;
 
-
 const FACTORY_CONTRACT: &str = "0x1c758aF0688502e49140230F6b0EBd376d429be5";
-
 
 abigen!(
     IERC20,
@@ -17,18 +14,16 @@ abigen!(
         function totalSupply() external view returns (uint256)
     ]"#,
 );
-
 abigen!(
     KSFactory,
     r#"[
         function getPools(address token0, address token1) external override view returns (address[] memory _tokenPools)
     ]"#,
 );
-
 abigen!(
     KSPool,
     r#"[
-        function getReserves() external override view returns (uint112 _reserve0, uint112 _reserve1)
+        function getTradeInfo() external virtual override view returns (uint112 _reserve0, uint112 _reserve1, uint112 _vReserve0, uint112 _vReserve1, uint256 _feeInPrecision)
     ]"#,
 );
 
@@ -72,11 +67,42 @@ pub async fn get_pools(client: Client, token0: &str, token1: &str) -> Result<Vec
     Ok(result)
 }
 
-pub async fn get_reserves(client: Client, pool_address: Address) -> Result<(u128, u128)>
+#[derive(Debug, Clone)]
+pub struct TradeInfo {
+    pub reserve0: U512,
+    pub reserve1: U512,
+    pub vreserve0: U512,
+    pub vreserve1: U512,
+    pub fee_in_precision: U512,
+}
+
+pub async fn get_trade_info(client: Client, pool_address: Address) -> Result<TradeInfo>
 {
     let contract = KSPool::new(pool_address, client);
-    let (reserve0, reserve1): (u128, u128) = contract.get_reserves().call().await?;
+    let (reserve0, reserve1, vreserve0, vreserve1, fee_in_precision) = contract.get_trade_info().call().await?;
 
-    Ok((reserve0, reserve1))
+    Ok(TradeInfo {
+        reserve0: reserve0.into(),
+        reserve1: reserve1.into(),
+        vreserve0: vreserve0.into(),
+        vreserve1: vreserve1.into(),
+        fee_in_precision: fee_in_precision.into(),
+    })
+}
+
+// TODO write test
+// TODO enable passing exchange direction (token_in / token_out)
+pub fn get_exchange_rate(ti: TradeInfo, amount_out: U512) -> Result<U512> {
+    // https://github.com/KyberNetwork/ks-classic-sc/blob/e557b57d7e4ead84caa2ec039aef280584148116/test/ksHelper.js#L16
+    let prec = U512::exp10(18);
+    // imprecise_amount_in = reserveIn * amountOut / (reserveOut - amountOut)
+    let nom = U512::checked_mul(ti.vreserve0, amount_out).ok_or(eyre!("math fail"))?;
+    let denom = U512::checked_sub(ti.vreserve1, amount_out).ok_or(eyre!("math fail"))?;
+    let imprecise_amount_in = U512::checked_div(nom, denom).ok_or(eyre!("math fail"))?;
+    // amountIn = floor(imprecise_amount_in * precision / (precision - feeInPrecision))
+    let nom = U512::checked_mul(imprecise_amount_in, prec).ok_or(eyre!("math fail"))?;
+    let denom = U512::checked_sub(prec, ti.fee_in_precision).ok_or(eyre!("math fail"))?;
+    let amount_in = U512::checked_div(nom, denom).ok_or(eyre!("math fail"))?;
+    Ok(amount_in)
 }
 
