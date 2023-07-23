@@ -1,25 +1,16 @@
-use ethers::prelude::{abigen, Address, U512};
-use std::str::FromStr;
+use ethers::prelude::{abigen, Address, U512, U256};
 use eyre::{eyre, Result};
-use std::collections::HashMap;
 use crate::api::Client;
-
-// Tokens
-const WETH: &str = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
-const USDT: &str = "0xdac17f958d2ee523a2206206994597c13d831ec7";
-const USDC: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
-const BNB: &str = "0xB8c77482e45F1F44dE1745F52C74426C631bDD52";
-const DAI: &str = "0x6b175474e89094c44da98b954eedeac495271d0f";
 
 // Smart Contract Addresses
 const FACTORY_CONTRACT: &str = "0x1c758aF0688502e49140230F6b0EBd376d429be5";
-const POOL_REQ_ETH: &str = "0xa97642500517c728ce1339a466de0f10c19034cd";
 
 // Smart Contract ABIs
 abigen!(
     KSFactory,
     r#"[
-        function getPools(address token0, address token1) external override view returns (address[] memory _tokenPools)
+        function allPoolsLength() external view returns (uint256)
+        function allPools(uint256) external view returns (address pool)
     ]"#,
 );
 abigen!(
@@ -29,25 +20,15 @@ abigen!(
     ]"#,
 );
 
-pub fn get_example_pool() -> Result<Address> {
-    Ok(Address::from_str(POOL_REQ_ETH)?)
-}
-
-pub fn get_example_tokens() -> Result<HashMap<String, Address>> {
-    let mut result: HashMap<String, Address> = HashMap::new();
-    result.insert("WETH".to_owned(), Address::from_str(WETH)?);
-    result.insert("USDT".to_owned(), Address::from_str(USDT)?);
-    result.insert("USDC".to_owned(), Address::from_str(USDC)?);
-    result.insert("BNB".to_owned(), Address::from_str(BNB)?);
-    result.insert("DAI".to_owned(), Address::from_str(DAI)?);
-    Ok(result)
-}
-
-// TODO FIX this returns an empty vector
-pub async fn get_pools(client: Client, token0: Address, token1: Address) -> Result<Vec<Address>> {
+pub async fn get_all_pools(client: Client) -> Result<Vec<Address>> {
     let address: Address = FACTORY_CONTRACT.parse()?;
     let factory = KSFactory::new(address, client.clone());
-    let result = factory.get_pools(token0, token1).call().await?;
+    let pool_count = factory.all_pools_length().call().await?.as_usize();
+    let mut result = Vec::new();
+    for i in 0..pool_count {
+        let pool = factory.all_pools(U256::from(i)).call().await?;
+        result.push(pool);
+    }
     Ok(result)
 }
 

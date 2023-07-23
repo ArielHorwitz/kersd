@@ -1,6 +1,5 @@
 use ethers::prelude::U512;
 use std::fs;
-use itertools::Itertools;
 use eyre::Result;
 mod api;
 mod pool;
@@ -11,15 +10,8 @@ async fn main() -> Result<()> {
     let client = api::get_client(&api_key)?;
     println!("Block number: {}", api::get_block_number(client.clone()).await?);
 
-    let tokens = pool::get_example_tokens()?;
-    let combinations = tokens.values().combinations(2);
-    let mut all_pools = Vec::new();
-    for pair in combinations {
-        let mut pools = pool::get_pools(client.clone(), *pair[0], *pair[1]).await?;
-        all_pools.append(&mut pools);
-    }
-    println!("Pools: {all_pools:?}");
-    all_pools.push(pool::get_example_pool()?);
+    let all_pools = pool::get_all_pools(client.clone()).await?;
+    println!("Found {} pools", all_pools.len());
 
     for pool in all_pools {
         println!("Pool: {pool:?}");
