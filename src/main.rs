@@ -1,37 +1,32 @@
-use ethers::prelude::{Address, U512};
+use ethers::prelude::U512;
 use std::fs;
-use std::str::FromStr;
 use itertools::Itertools;
 use eyre::Result;
 mod api;
-
-const WETH: &str = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
-const USDT: &str = "0xdac17f958d2ee523a2206206994597c13d831ec7";
-const USDC: &str = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
-const BNB: &str = "0xB8c77482e45F1F44dE1745F52C74426C631bDD52";
-const DAI: &str = "0x6b175474e89094c44da98b954eedeac495271d0f";
-const POOL_REQ_ETH: &str = "0xa97642500517c728ce1339a466de0f10c19034cd";
+mod pool;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let api_key = fs::read_to_string("APIKEY")?;
     let client = api::get_client(&api_key)?;
+    println!("Block number: {}", api::get_block_number(client.clone()).await?);
 
-    let combinations = vec![WETH, USDT, USDC, BNB, DAI].into_iter().combinations(2);
+    let tokens = pool::get_example_tokens()?;
+    let combinations = tokens.values().combinations(2);
     let mut all_pools = Vec::new();
     for pair in combinations {
-        let mut pools = api::get_pools(client.clone(), pair[0], pair[1]).await?;
+        let mut pools = pool::get_pools(client.clone(), *pair[0], *pair[1]).await?;
         all_pools.append(&mut pools);
     }
     println!("Pools: {all_pools:?}");
-    all_pools.push(Address::from_str(POOL_REQ_ETH)?);
+    all_pools.push(pool::get_example_pool()?);
 
     for pool in all_pools {
         println!("Pool: {pool:?}");
-        let ti = api::get_trade_info(client.clone(), pool).await?;
-        let amount_in = api::get_exchange_rate(ti.clone(), U512::exp10(10))?;
+        let ti = pool::get_trade_info(client.clone(), pool).await?;
+        let amount_in = pool::get_exchange_rate(ti.clone(), U512::exp10(10))?;
         println!("{amount_in:?}");
-        let amount_in_2 = api::get_exchange_rate(ti.clone(), U512::exp10(11))?;
+        let amount_in_2 = pool::get_exchange_rate(ti.clone(), U512::exp10(11))?;
         println!("{amount_in_2:?}");
     }
     Ok(())
