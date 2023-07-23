@@ -16,6 +16,8 @@ abigen!(
 abigen!(
     KSPool,
     r#"[
+        function token0() external view returns (address)
+        function token1() external view returns (address)
         function getTradeInfo() external virtual override view returns (uint112 _reserve0, uint112 _reserve1, uint112 _vReserve0, uint112 _vReserve1, uint256 _feeInPrecision)
     ]"#,
 );
@@ -34,6 +36,8 @@ pub async fn get_all_pools(client: Client) -> Result<Vec<Address>> {
 
 #[derive(Debug, Clone)]
 pub struct TradeInfo {
+    pub token0: Address,
+    pub token1: Address,
     pub reserve0: U512,
     pub reserve1: U512,
     pub vreserve0: U512,
@@ -45,9 +49,15 @@ pub struct TradeInfo {
 pub async fn get_trade_info(client: Client, pool_address: Address) -> Result<TradeInfo>
 {
     let contract = KSPool::new(pool_address, client);
-    let (reserve0, reserve1, vreserve0, vreserve1, fee_in_precision) = contract.get_trade_info().call().await?;
+    let (reserve0, reserve1, vreserve0, vreserve1, fee_in_precision) = contract
+        .get_trade_info().call().await?;
+
+    let token0: Address = contract.token_0().call().await?;
+    let token1: Address = contract.token_1().call().await?;
 
     Ok(TradeInfo {
+        token0,
+        token1,
         reserve0: reserve0.into(),
         reserve1: reserve1.into(),
         vreserve0: vreserve0.into(),

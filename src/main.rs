@@ -16,10 +16,20 @@ async fn main() -> Result<()> {
     for pool in all_pools {
         println!("Pool: {pool:?}");
         let ti = pool::get_trade_info(client.clone(), pool).await?;
-        let amount_in = pool::get_exchange_rate(ti.clone(), U512::exp10(10))?;
-        println!("{amount_in:?}");
-        let amount_in_2 = pool::get_exchange_rate(ti.clone(), U512::exp10(11))?;
-        println!("{amount_in_2:?}");
+        let name0 = api::get_name(client.clone(), ti.token0).await?;
+        let name1 = api::get_name(client.clone(), ti.token1).await?;
+        let buy1 = U512::exp10(10);
+        let buy2 = U512::exp10(11);
+        if let Ok(sell1) = pool::get_exchange_rate(ti.clone(), buy1) {
+            println!("Buy {buy1} {name0} for {sell1} {name1}");
+        } else {
+            println!("Failed to calculate exchange rate for buying {buy1} {name0} with {name1}");
+        };
+        if let Ok(sell2) = pool::get_exchange_rate(ti.clone(), buy2) {
+            println!("Buy {buy2} {name0} for {sell2} {name1}");
+        } else {
+            println!("Failed to calculate exchange rate for buying {buy2} {name0} with {name1}");
+        };
     }
     Ok(())
 }
