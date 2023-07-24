@@ -1,15 +1,19 @@
 use ethers::prelude::{Address, U512};
 use eyre::Result;
-use std::{fs, time::Duration};
+use serde::{Deserialize, Serialize};
+use std::{path::Path, time::Duration};
 use tokio::time::{sleep, timeout};
 mod api;
 
 const LOOP_INTERVAL_MS: u64 = 5_000;
 const POLL_INTERVAL_MS: u64 = 50;
+const DB_PATH: &str = "./db";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let api_key = fs::read_to_string("APIKEY")?;
+    let api_key = tokio::fs::read_to_string("APIKEY").await?;
+    let db_dir = Path::new(DB_PATH);
+    tokio::fs::create_dir_all(db_dir).await?;
     println!("Searching for pools...");
     let client = api::get_client(&api_key)?;
     let all_pools = api::get_all_pools(&client).await?;
@@ -24,10 +28,14 @@ async fn main() -> Result<()> {
         }
         let block_number = api::get_block_number(&client).await?;
         if block_number > last_block_number {
-            last_block_number = block_number;
             println!("Block number: {block_number}");
+            last_block_number = block_number;
+            let block_dir = db_dir.join(format!("{block_number}"));
+            tokio::fs::create_dir_all(&block_dir).await?;
+            let block_dir = block_dir.to_string_lossy().to_string();
             for pool in &all_pools {
-                let fut = collect_exchange_rate(client.clone(), *pool, block_number);
+                let fut =
+                    collect_exchange_rate(client.clone(), *pool, block_number, block_dir.clone());
                 task_handlers.spawn(fut);
             }
         }
@@ -35,7 +43,7 @@ async fn main() -> Result<()> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ExchangeRate {
     block_number: u64,
     pool: Address,
@@ -49,6 +57,7 @@ async fn collect_exchange_rate(
     client: api::Client,
     pool: Address,
     block_number: u64,
+    db_dir: String,
 ) -> Result<(u64, Address)> {
     let ti = api::get_trade_info(&client, &pool).await?;
     let buy_amount = U512::exp10(10);
@@ -61,6 +70,8 @@ async fn collect_exchange_rate(
         sell0,
         buy1: buy_amount,
     };
-    println!("{} {} {}", exchange_rate.block_number, exchange_rate.pool, exchange_rate.sell0);
+    let json_string = serde_json::to_string_pretty(&exchange_rate)?;
+    let filepath = Path::new(&db_dir).join(format!("{pool:?}"));
+    tokio::fs::write(filepath, json_string.into_bytes()).await?;
     Ok((block_number, pool))
 }
