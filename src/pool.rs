@@ -72,7 +72,7 @@ pub async fn get_trade_info(client: Client, pool_address: Address) -> Result<Tra
 // https://github.com/KyberNetwork/ks-classic-sc/blob/e557b57d7e4ead84caa2ec039aef280584148116/test/ksHelper.js#L16
 // Whose purpose is to calculate the token amount required to sell in exchange
 // for a given token amount to buy
-pub fn get_exchange_rate(ti: TradeInfo, amount_out: U512) -> Result<U512> {
+pub fn calc_exchange_rate(ti: TradeInfo, amount_out: U512) -> Result<U512> {
     let prec = U512::exp10(18);
     // amount_in = reserveIn * amountOut / (reserveOut - amountOut)
     let nom = U512::checked_mul(ti.vreserve0, amount_out).ok_or(eyre!("math fail"))?;
