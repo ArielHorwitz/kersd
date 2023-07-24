@@ -1,5 +1,6 @@
 [package]
-name = "moneta"
+name = "kersd"
+description = "Kyberswap Exchange Rate Scraper Daemon"
 version = "0.1.0"
 edition = "2021"
 

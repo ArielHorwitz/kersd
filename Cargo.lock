@@ -1608,6 +1608,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kersd"
+version = "0.1.0"
+dependencies = [
+ "ethers",
+ "eyre",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "lalrpop"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1723,17 +1734,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys",
-]
-
-[[package]]
-name = "moneta"
-version = "0.1.0"
-dependencies = [
- "ethers",
- "eyre",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
