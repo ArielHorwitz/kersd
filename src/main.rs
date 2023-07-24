@@ -1,9 +1,11 @@
 use ethers::prelude::{Address, U512};
 use eyre::Result;
 use std::{fs, time::Duration};
+use tokio::time::{sleep, timeout};
 mod api;
 
 const LOOP_INTERVAL_MS: u64 = 5_000;
+const POLL_INTERVAL_MS: u64 = 50;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,8 +15,13 @@ async fn main() -> Result<()> {
     let all_pools = api::get_all_pools(&client).await?;
     println!("Found {} pools", all_pools.len());
     let mut last_block_number = 0;
+    let mut task_handlers = tokio::task::JoinSet::new();
+    let interval = Duration::from_millis(LOOP_INTERVAL_MS);
+    let poll_timeout = Duration::from_millis(POLL_INTERVAL_MS);
     loop {
-        tokio::time::sleep(Duration::from_millis(LOOP_INTERVAL_MS)).await;
+        while let Ok(Some(Ok(completed))) = timeout(poll_timeout, task_handlers.join_next()).await {
+            println!("{completed:?}");
+        }
         let block_number = api::get_block_number(&client).await?;
         if block_number > last_block_number {
             last_block_number = block_number;
@@ -24,6 +31,7 @@ async fn main() -> Result<()> {
                 task_handlers.spawn(fut);
             }
         }
+        sleep(interval).await;
     }
 }
 
@@ -41,7 +49,7 @@ async fn collect_exchange_rate(
     client: api::Client,
     pool: Address,
     block_number: u64,
-) -> Result<()> {
+) -> Result<(u64, Address)> {
     let ti = api::get_trade_info(&client, &pool).await?;
     let buy_amount = U512::exp10(10);
     let sell0 = api::calc_exchange_rate(ti.clone(), buy_amount)?;
@@ -53,6 +61,6 @@ async fn collect_exchange_rate(
         sell0,
         buy1: buy_amount,
     };
-    println!("{exchange_rate:?}");
-    Ok(())
+    println!("{} {} {}", exchange_rate.block_number, exchange_rate.pool, exchange_rate.sell0);
+    Ok((block_number, pool))
 }
