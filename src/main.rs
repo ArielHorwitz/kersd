@@ -11,6 +11,7 @@ const DB_PATH: &str = "./db";
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    println!("KERSD DAEMON STARTED");
     // Setup
     let api_key = tokio::fs::read_to_string("APIKEY").await?;
     let db_dir = Path::new(DB_PATH);
@@ -45,9 +46,9 @@ async fn main() -> Result<()> {
             // Wrap join_next in a timeout so that it behaves more like polling
             match timeout(poll_timeout, task_handlers.join_next()).await {
                 // Timed out (no tasks done, stop polling)
-                Err(_) => { println!("Awaiting {} tasks...", task_handlers.len()); break },
+                Err(_) => break,
                 // JoinSet is empty (no tasks pending, stop polling)
-                Ok(None) => { println!("All tasks done."); break },
+                Ok(None) => break,
                 // Joining task failed (log and poll again)
                 Ok(Some(Err(err))) => log(eyre!(err)),
                 // A task has failed (log and poll again)

@@ -27,10 +27,10 @@ rm -rf ~/.kersd-db/
 docker cp $(docker ps -qla):/src/db/ ~/.kersd-db/
 ```
 
-The exchange rates are saved as JSON files to `~/.kersd-db/`, where each subdirectory is a block number which contains a file for each pool's exchange rate. Token amounts are saved in hex. Let's take a look at one of these as an example:
+The exchange rates are saved as JSON files to `~/.kersd-db/`, where each subdirectory is a block number containing a file for each pool's exchange rate. Token amounts are saved in hex. Let's take a look at one of these as an example:
 ```bash
 # Print contents of a random file in ~/.kersd-db/
-cat $(find ~/.kersd-db//* | grep 0x | head -1) ; echo
+cat $(find ~/.kersd-db/* | grep 0x | head -1) ; echo
 ```
 
 ## Potential Improvements
