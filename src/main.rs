@@ -2,9 +2,8 @@ extern crate pretty_env_logger;
 #[macro_use]
 extern crate log;
 
-use ethers::prelude::{Address, U512};
+use ethers::prelude::Address;
 use eyre::{eyre, Result};
-use serde::{Deserialize, Serialize};
 use std::{env, path::Path, time::Duration};
 use tokio::time::{sleep, timeout};
 mod api;
@@ -51,8 +50,7 @@ async fn main() -> Result<()> {
             tokio::fs::create_dir_all(&block_dir).await?;
             let block_dir = block_dir.to_string_lossy().to_string();
             for pool in &all_pools {
-                let fut =
-                    collect_exchange_rate(client.clone(), *pool, block_number, block_dir.clone());
+                let fut = collect_and_save(client.clone(), block_number, *pool, block_dir.clone());
                 task_handlers.spawn(fut);
             }
         }
@@ -83,47 +81,34 @@ async fn main() -> Result<()> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ExchangeRate {
-    block_number: u64,
-    pool: Address,
-    token0: Address,
-    token1: Address,
-    sell0: U512,
-    buy1: U512,
-}
-
-async fn collect_exchange_rate(
+async fn collect_and_save(
     client: api::Client,
-    pool: Address,
     block_number: u64,
+    pool: Address,
     db_dir: String,
-) -> Result<ExchangeRate> {
-    // Wrap inner function to catch errors and include context
-    do_collect_exchange_rate(client, pool, block_number, db_dir)
+) -> Result<(u64, Address)> {
+    let snapshot = api::get_pool_snapshot(&client, &pool)
         .await
-        .map_err(|err| eyre!("Error collecting block {block_number} for pool {pool}: {err}"))
-}
-
-async fn do_collect_exchange_rate(
-    client: api::Client,
-    pool: Address,
-    block_number: u64,
-    db_dir: String,
-) -> Result<ExchangeRate> {
-    let ti = api::get_trade_info(&client, &pool).await?;
-    let buy_amount = U512::exp10(10);
-    let sell0 = api::calc_exchange_rate(ti.clone(), buy_amount)?;
-    let exchange_rate = ExchangeRate {
-        block_number,
-        pool,
-        token0: ti.token0,
-        token1: ti.token1,
-        sell0,
-        buy1: buy_amount,
-    };
-    let json_string = serde_json::to_string_pretty(&exchange_rate)?;
+        .map_err(|err| {
+            eyre!(
+                "Error getting exchange rates for {} on block {}: {}",
+                pool,
+                block_number,
+                err
+            )
+        })?;
+    let exchange_info = api::ExchangeRates::new(block_number, pool, &snapshot);
+    let json_string = serde_json::to_string_pretty(&exchange_info)?;
     let filepath = Path::new(&db_dir).join(format!("{pool:?}"));
-    tokio::fs::write(filepath, json_string.into_bytes()).await?;
-    Ok(exchange_rate)
+    tokio::fs::write(filepath, json_string.into_bytes())
+        .await
+        .map_err(|err| {
+            eyre!(
+                "Error writing data to disk for pool {} on block {}: {}",
+                pool,
+                block_number,
+                err
+            )
+        })?;
+    Ok((block_number, pool))
 }

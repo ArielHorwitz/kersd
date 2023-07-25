@@ -1,6 +1,7 @@
 use ethers::prelude::{abigen, Address, Http, Middleware, Provider, U256, U512};
 use eyre::{eyre, Result};
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use std::{cmp::Ordering, sync::Arc};
 
 pub type Client = Arc<Provider<Http>>;
 
@@ -67,8 +68,9 @@ pub async fn get_all_pools(client: &Client) -> Result<Vec<Address>> {
     Ok(result)
 }
 
+// Token TokenTrade Rates
 #[derive(Debug, Clone)]
-pub struct TradeInfo {
+pub struct PoolSnapshot {
     pub token0: Address,
     pub token1: Address,
     pub reserve0: U512,
@@ -78,8 +80,65 @@ pub struct TradeInfo {
     pub fee_in_precision: U512,
 }
 
-// TODO see if possible to get trade info from a particular block
-pub async fn get_trade_info(client: &Client, pool_address: &Address) -> Result<TradeInfo> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExchangeRates {
+    block_number: u64,
+    pool: Address,
+    token0: Address,
+    token1: Address,
+    sell0_buy1: Option<TokenTrade>,
+    sell1_buy0: Option<TokenTrade>,
+}
+
+impl ExchangeRates {
+    pub fn new(block_number: u64, pool: Address, ti: &PoolSnapshot) -> Self {
+        Self {
+            block_number,
+            pool,
+            token0: ti.token0,
+            token1: ti.token1,
+            sell0_buy1: get_best_trade(ti, true),
+            sell1_buy0: get_best_trade(ti, false),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenTrade {
+    pub sell_amount: U512,
+    pub buy_amount: U512,
+    pub exchange_rate: f64,
+}
+
+impl TokenTrade {
+    pub fn new(sell_amount: U512, buy_amount: U512) -> Self {
+        let fsell: f64 = sell_amount.to_string().parse().unwrap_or(0.0);
+        let fbuy: f64 = buy_amount.to_string().parse().unwrap_or(0.0);
+        let exchange_rate: f64 = match fbuy != 0.0 && fsell != 0.0 {
+            true => fbuy / fsell,
+            false => 0.0,
+        };
+        Self {
+            sell_amount,
+            buy_amount,
+            exchange_rate,
+        }
+    }
+}
+
+impl PartialOrd for TokenTrade {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.exchange_rate.partial_cmp(&other.exchange_rate)
+    }
+}
+
+impl PartialEq for TokenTrade {
+    fn eq(&self, other: &Self) -> bool {
+        self.exchange_rate == other.exchange_rate
+    }
+}
+
+pub async fn get_pool_snapshot(client: &Client, pool_address: &Address) -> Result<PoolSnapshot> {
     let contract = KSPool::new(*pool_address, client.clone());
     let (reserve0, reserve1, vreserve0, vreserve1, fee_in_precision) =
         contract.get_trade_info().call().await?;
@@ -87,7 +146,7 @@ pub async fn get_trade_info(client: &Client, pool_address: &Address) -> Result<T
     let token0: Address = contract.token_0().call().await?;
     let token1: Address = contract.token_1().call().await?;
 
-    Ok(TradeInfo {
+    Ok(PoolSnapshot {
         token0,
         token1,
         reserve0: reserve0.into(),
@@ -98,17 +157,37 @@ pub async fn get_trade_info(client: &Client, pool_address: &Address) -> Result<T
     })
 }
 
-// TODO write test
-// TODO enable passing exchange direction (token_in / token_out)
-// The following function is a translation of:
-// https://github.com/KyberNetwork/ks-classic-sc/blob/e557b57d7e4ead84caa2ec039aef280584148116/test/ksHelper.js#L16
-// Whose purpose is to calculate the token amount required to sell in exchange
-// for a given token amount to buy
-pub fn calc_exchange_rate(ti: TradeInfo, amount_out: U512) -> Result<U512> {
+fn get_best_trade(ti: &PoolSnapshot, sell0: bool) -> Option<TokenTrade> {
+    let mut best_trade = None;
+    for buy_amount_exp in 0..15 {
+        let buy_amount = U512::from(10).pow(buy_amount_exp.into());
+        if let Ok(sell_amount) = calc_sell_amount(ti, buy_amount, sell0) {
+            let trade = TokenTrade::new(sell_amount, buy_amount);
+            if let Some(best) = &best_trade {
+                if &trade > best {
+                    best_trade = Some(trade);
+                }
+            } else if best_trade.is_none() && trade.exchange_rate > 0. {
+                best_trade = Some(trade);
+            }
+        }
+    }
+    best_trade
+}
+
+/// Calculate the token amount required to sell for a given amount to buy
+/// A translation of:
+/// https://github.com/KyberNetwork/ks-classic-sc/blob/e557b57d7e4ead84caa2ec039aef280584148116/test/ksHelper.js#L16
+fn calc_sell_amount(ti: &PoolSnapshot, buy_amount: U512, sell0: bool) -> Result<U512> {
+    // sell = in, buy = out
     let prec = U512::exp10(18);
+    let (reserve_in, reserve_out) = match sell0 {
+        true => (ti.vreserve1, ti.vreserve0),
+        false => (ti.vreserve0, ti.vreserve1),
+    };
     // amount_in = reserveIn * amountOut / (reserveOut - amountOut)
-    let nom = U512::checked_mul(ti.vreserve0, amount_out).ok_or(eyre!("math fail"))?;
-    let denom = U512::checked_sub(ti.vreserve1, amount_out).ok_or(eyre!("math fail"))?;
+    let nom = U512::checked_mul(reserve_in, buy_amount).ok_or(eyre!("math fail"))?;
+    let denom = U512::checked_sub(reserve_out, buy_amount).ok_or(eyre!("math fail"))?;
     let amount_in = U512::checked_div(nom, denom).ok_or(eyre!("math fail"))?;
     // amountIn = floor(amount_in * precision / (precision - feeInPrecision))
     let nom = U512::checked_mul(amount_in, prec).ok_or(eyre!("math fail"))?;

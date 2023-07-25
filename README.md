@@ -25,20 +25,19 @@ Run the container and pass our dockerenv file as an argument:
 docker run --env-file ~/.kersd-dockerenv kersd
 ```
 
-Our terminal should show new block numbers as they are found, as well as any errors. In another terminal we can stop the container and copy data from the container to our local machine:
+The daemon should be running in your terminal and printing log messages. We can stop the container in another terminal and copy data from the container to our local machine:
 ```bash
 docker kill $(docker ps -ql)
 rm -rf ~/.kersdb/
 docker cp $(docker ps -qla):/app/db/ ~/.kersdb/
 ```
 
-The exchange rates are saved as JSON files in `~/.kersdb/`, where each subdirectory is a block number containing a file for each pool's exchange rate. Token amounts are saved in hex. Let's take a look at one of these as an example:
+The exchange rates are saved as JSON files in `~/.kersdb/`, where each subdirectory is a block number containing a file for each pool's exchange rate (in both directions). Token amounts are saved in hex. Let's take a look at one of these as an example:
 ```bash
 # Print contents of a random file in ~/.kersdb/
 cat $(find ~/.kersdb/* | grep 0x | head -1) ; echo
 ```
 
 ## Potential Improvements
-- More detailed exchange rates with a range of buy/sell amounts in both directions
+- Real database
 - Tests
-- Logging
