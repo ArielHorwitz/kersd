@@ -1,3 +1,6 @@
 /target
 /db
-
+/.gitignore
+/.dockerignore
+/README.md
+/env.template
