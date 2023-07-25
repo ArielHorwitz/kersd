@@ -22,7 +22,7 @@ docker build -t kersd .
 
 Run the container and pass our dockerenv file as an argument:
 ```bash
-docker run kersd --env-file ~/.kersd-dockerenv
+docker run --env-file ~/.kersd-dockerenv kersd
 ```
 
 Our terminal should show new block numbers as they are found, as well as any errors. In another terminal we can stop the container and copy data from the container to our local machine:
