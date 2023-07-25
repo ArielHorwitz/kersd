@@ -3,4 +3,4 @@
 /.gitignore
 /.dockerignore
 /README.md
-/env.template
+/dockerenv.template
